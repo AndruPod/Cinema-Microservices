@@ -1,23 +1,17 @@
+import { Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { NestFactory } from "@nestjs/core";
 import { ApiGatewayModule } from "./api-gateway.module";
-import { ConfigService } from "@nestjs/config";
-import { ValidationPipe } from "@nestjs/common";
-import { AllExceptionsFilter } from "./rpc-exception.filter";
+import { configureGateway } from "./setup";
 
 async function bootstrap() {
     const app = await NestFactory.create(ApiGatewayModule);
-    const configService = app.get(ConfigService);
-    const port = configService.get<number>("API_GATEWAY_PORT") || 3000;
+    configureGateway(app);
 
-    app.useGlobalFilters(new AllExceptionsFilter())
-
-    app.useGlobalPipes(new ValidationPipe({
-        whitelist: true,
-        transform: true,
-    }));
-
+    const port = app.get(ConfigService).getOrThrow<number>("API_GATEWAY_PORT");
     await app.listen(port);
 
-    console.log(`App listening on port ${port}`);
+    new Logger("Bootstrap").log(`API gateway listening on port ${port}`);
 }
-bootstrap();
+
+void bootstrap();
