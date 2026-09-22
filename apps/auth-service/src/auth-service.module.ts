@@ -1,39 +1,49 @@
 import { Module } from "@nestjs/common";
-import { AuthServiceController } from "./auth-service.controller";
-import { AuthServiceService } from "./auth-service.service";
-import { TypeOrmModule } from "@nestjs/typeorm";
 import { ConfigModule, ConfigService } from "@nestjs/config";
-import { User } from "./entities/user.entity";
 import { JwtModule } from "@nestjs/jwt";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import { createEnvValidator } from "@app/shared/config/env.validation";
+import { postgresOptions } from "@app/shared/database/postgres.config";
+import { DatabaseHealthController } from "@app/shared/rpc/health.controller";
+import { AuthController } from "./auth.controller";
+import { AuthService } from "./auth.service";
+import { AuthEnv } from "./config/auth.env";
+import { authMigrations } from "./database/migrations";
+import { User } from "./entities/user.entity";
 
 @Module({
     imports: [
-        ConfigModule.forRoot(),
+        ConfigModule.forRoot({
+            isGlobal: true,
+            validate: createEnvValidator(AuthEnv),
+        }),
         TypeOrmModule.forRootAsync({
-            imports: [ConfigModule],
             inject: [ConfigService],
-            useFactory: (configService: ConfigService) => ({
-                type: "postgres",
-                host: configService.get<string>("DB_HOST"),
-                port: configService.get<number>("DB_PORT"),
-                username: configService.get<string>("DB_USER"),
-                password: configService.get<string>("DB_PASSWORD"),
-                database: configService.get<string>("CATALOG_DB_NAME"),
-                entities: [User],
-                synchronize: true,
-                autoLoadEntities: true,
-            }),
+            useFactory: (config: ConfigService) =>
+                postgresOptions(
+                    {
+                        host: config.getOrThrow("DB_HOST"),
+                        port: config.getOrThrow("DB_PORT"),
+                        username: config.getOrThrow("DB_USER"),
+                        password: config.getOrThrow("DB_PASSWORD"),
+                        database: config.getOrThrow("USERS_DB_NAME"),
+                    },
+                    [User],
+                    authMigrations,
+                ),
         }),
         TypeOrmModule.forFeature([User]),
-        JwtModule.register({
-            global: true,
-            secret: process.env.JWT_SECRET,
-            signOptions: {
-                expiresIn: "10m"
-            }
-        })
+        JwtModule.registerAsync({
+            inject: [ConfigService],
+            useFactory: (config: ConfigService) => ({
+                secret: config.getOrThrow<string>("JWT_SECRET"),
+                signOptions: {
+                    expiresIn: config.getOrThrow("JWT_EXPIRES_IN"),
+                },
+            }),
+        }),
     ],
-    controllers: [AuthServiceController],
-    providers: [AuthServiceService],
+    controllers: [AuthController, DatabaseHealthController],
+    providers: [AuthService],
 })
 export class AuthServiceModule {}
