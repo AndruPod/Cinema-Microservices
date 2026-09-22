@@ -1,90 +1,111 @@
+# Runs PostgreSQL and the four applications from one production-style image.
+# Values come from .env; the settings below override the ones that differ
+# inside the Docker network (hostnames and the internal database port).
+
+x-app: &app
+  build: .
+  image: cinema-microservices:local
+  env_file: .env
+  restart: unless-stopped
+  networks:
+    - cinema-network
+
+x-docker-network-env: &docker-network-env
+  DB_HOST: cinema_db
+  DB_PORT: 5432
+  AUTH_SERVICE_HOST: auth-service
+  CATALOG_SERVICE_HOST: catalog-service
+  ORDER_SERVICE_HOST: order-service
+  AUTH_SERVICE_LISTEN_HOST: 0.0.0.0
+  CATALOG_SERVICE_LISTEN_HOST: 0.0.0.0
+  ORDER_SERVICE_LISTEN_HOST: 0.0.0.0
+
 services:
   cinema_db:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     container_name: cinema_db
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: catalog_db
+      POSTGRES_USER: ${DB_USER:?DB_USER is required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: postgres
+      USERS_DB_NAME: ${USERS_DB_NAME:?USERS_DB_NAME is required}
+      CATALOG_DB_NAME: ${CATALOG_DB_NAME:?CATALOG_DB_NAME is required}
+      ORDER_DB_NAME: ${ORDER_DB_NAME:?ORDER_DB_NAME is required}
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5434}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      - ./docker/postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${CATALOG_DB_NAME}"]
+      # -h forces TCP, so the check fails while the init scripts still run.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d postgres"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
     networks:
       - cinema-network
-
-  api-gateway:
-    build: .
-    container_name: api_gateway
-    command: npx nest start --watch api-gateway
-    volumes:
-      - .:/usr/src/app
-      - /usr/src/app/node_modules
-    ports:
-      - "3000:3000"
-    depends_on:
-      - catalog-service
-    networks:
-      - cinema-network
-
 
   auth-service:
-    build: .
-    container_name: auth_microservice
-    command: npx nest start --watch auth-service
-    env_file:
-      - .env
-    volumes:
-      - .:/usr/src/app
-      - /usr/src/app/node_modules
-    ports:
-      - "3003:3003"
+    <<: *app
+    container_name: auth_service
+    command: ["node", "dist/apps/auth-service/main.js"]
+    environment: *docker-network-env
     depends_on:
       cinema_db:
         condition: service_healthy
-    networks:
-      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "node docker/tcp-healthcheck.js $${AUTH_SERVICE_PORT}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   catalog-service:
-    build: .
-    container_name: catalog_microservice
-    command: npx nest start --watch catalog-service
-    env_file:
-      - .env
-    volumes:
-      - .:/usr/src/app
-      - /usr/src/app/node_modules
-    ports:
-      - "3001:3001"
+    <<: *app
+    container_name: catalog_service
+    command: ["node", "dist/apps/catalog-service/main.js"]
+    environment: *docker-network-env
     depends_on:
       cinema_db:
         condition: service_healthy
-    networks:
-      - cinema-network
-
+    healthcheck:
+      test: ["CMD-SHELL", "node docker/tcp-healthcheck.js $${CATALOG_SERVICE_PORT}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   order-service:
-    build: .
-    container_name: order_microservice
-    command: npx nest start --watch order-service
-    env_file:
-      - .env
-    volumes:
-      - .:/usr/src/app
-      - /usr/src/app/node_modules
-    ports:
-      - "3002:3002"
+    <<: *app
+    container_name: order_service
+    command: ["node", "dist/apps/order-service/main.js"]
+    environment: *docker-network-env
     depends_on:
       cinema_db:
         condition: service_healthy
-    networks:
-      - cinema-network
+    healthcheck:
+      test: ["CMD-SHELL", "node docker/tcp-healthcheck.js $${ORDER_SERVICE_PORT}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api-gateway:
+    <<: *app
+    container_name: api_gateway
+    command: ["node", "dist/apps/api-gateway/main.js"]
+    environment: *docker-network-env
+    ports:
+      - "${API_GATEWAY_PORT:-3000}:${API_GATEWAY_PORT:-3000}"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      catalog-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${API_GATEWAY_PORT}/health > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 8s
+      retries: 5
 
 networks:
   cinema-network:
