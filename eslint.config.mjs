@@ -6,7 +6,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
     {
-        ignores: ["eslint.config.mjs"],
+        ignores: ["eslint.config.mjs", "dist/**", "coverage/**"],
     },
     eslint.configs.recommended,
     ...tseslint.configs.recommendedTypeChecked,
@@ -25,15 +25,20 @@ export default tseslint.config(
         },
     },
     {
-        extends: [
-            "plugin:@typescript-eslint/recommended",
-            "plugin:prettier/recommended",
-        ],
         rules: {
             "@typescript-eslint/no-explicit-any": "off",
             "@typescript-eslint/no-floating-promises": "warn",
             "@typescript-eslint/no-unsafe-argument": "warn",
             "prettier/prettier": ["error", { endOfLine: "auto" }],
+        },
+    },
+    {
+        // Supertest response bodies and Jest matchers are untyped by design.
+        files: ["**/*.spec.ts", "test/**/*.ts"],
+        rules: {
+            "@typescript-eslint/no-unsafe-assignment": "off",
+            "@typescript-eslint/no-unsafe-member-access": "off",
+            "@typescript-eslint/unbound-method": "off",
         },
     },
 );

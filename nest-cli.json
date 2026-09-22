@@ -1,14 +1,14 @@
 {
   "$schema": "https://json.schemastore.org/nest-cli",
   "collection": "@nestjs/schematics",
-  "sourceRoot": "apps/nest-cinema/src",
+  "sourceRoot": "apps/api-gateway/src",
   "compilerOptions": {
     "deleteOutDir": true,
     "webpack": true,
-    "tsConfigPath": "apps/nest-cinema/tsconfig.app.json"
+    "tsConfigPath": "apps/api-gateway/tsconfig.app.json"
   },
   "monorepo": true,
-  "root": "apps/nest-cinema",
+  "root": "apps/api-gateway",
   "projects": {
     "api-gateway": {
       "type": "application",
@@ -35,15 +35,6 @@
       "sourceRoot": "apps/catalog-service/src",
       "compilerOptions": {
         "tsConfigPath": "apps/catalog-service/tsconfig.app.json"
-      }
-    },
-    "nest-cinema": {
-      "type": "application",
-      "root": "apps/nest-cinema",
-      "entryFile": "main",
-      "sourceRoot": "apps/nest-cinema/src",
-      "compilerOptions": {
-        "tsConfigPath": "apps/nest-cinema/tsconfig.app.json"
       }
     },
     "order-service": {
