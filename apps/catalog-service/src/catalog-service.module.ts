@@ -1,31 +1,39 @@
 import { Module } from "@nestjs/common";
-import { CatalogServiceController } from "./catalog-service.controller";
-import { CatalogServiceService } from "./catalog-service.service";
-import { TypeOrmModule } from "@nestjs/typeorm";
 import { ConfigModule, ConfigService } from "@nestjs/config";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import { createEnvValidator } from "@app/shared/config/env.validation";
+import { postgresOptions } from "@app/shared/database/postgres.config";
+import { DatabaseHealthController } from "@app/shared/rpc/health.controller";
+import { CatalogEnv } from "./config/catalog.env";
+import { catalogMigrations } from "./database/migrations";
 import { Movie } from "./entities/movie.entity";
+import { MoviesController } from "./movies.controller";
+import { MoviesService } from "./movies.service";
 
 @Module({
     imports: [
-        ConfigModule.forRoot(),
+        ConfigModule.forRoot({
+            isGlobal: true,
+            validate: createEnvValidator(CatalogEnv),
+        }),
         TypeOrmModule.forRootAsync({
-            imports: [ConfigModule],
             inject: [ConfigService],
-            useFactory: (configService: ConfigService) => ({
-                type: "postgres",
-                host: configService.get<string>("DB_HOST"),
-                port: configService.get<number>("DB_PORT"),
-                username: configService.get<string>("DB_USER"),
-                password: configService.get<string>("DB_PASSWORD"),
-                database: configService.get<string>("CATALOG_DB_NAME"),
-                entities: [Movie],
-                synchronize: true,
-                autoLoadEntities: true,
-            }),
+            useFactory: (config: ConfigService) =>
+                postgresOptions(
+                    {
+                        host: config.getOrThrow("DB_HOST"),
+                        port: config.getOrThrow("DB_PORT"),
+                        username: config.getOrThrow("DB_USER"),
+                        password: config.getOrThrow("DB_PASSWORD"),
+                        database: config.getOrThrow("CATALOG_DB_NAME"),
+                    },
+                    [Movie],
+                    catalogMigrations,
+                ),
         }),
         TypeOrmModule.forFeature([Movie]),
     ],
-    controllers: [CatalogServiceController],
-    providers: [CatalogServiceService],
+    controllers: [MoviesController, DatabaseHealthController],
+    providers: [MoviesService],
 })
 export class CatalogServiceModule {}
